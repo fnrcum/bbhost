@@ -69,6 +69,7 @@ struct HostConfig {
     std::map<std::string, std::string> keys;
     // [gamepad] or [controller] from the config, button name -> action name.
     std::map<std::string, std::string> gamepad;
+    std::string input_device;  // input.device: "auto" (default, the last device used), "controller" (keys and mouse never drive the game) or "keyboard"
     std::string config_path;   // the file to edit: the per-user config once there is one
     std::string config_layers; // every file read, lowest first ("a <- b <- c")
     std::string profile;       // --config's file name without .toml ("" without one): names its own F10 settings

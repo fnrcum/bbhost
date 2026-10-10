@@ -18,6 +18,19 @@ gyro come through as pad buttons.
 4. Grips and Back: bind them in Steam to gamepad buttons, or leave them to
    bbhost's defaults below.
 
+## Controller only
+
+If Steam still sends keys or clicks alongside the pad, pin the input to the
+controller; the keyboard and mouse then never drive the game or switch the
+prompts:
+
+```toml
+[input]
+device = "controller"
+```
+
+(`BBHOST_INPUT_DEVICE=controller` does the same for one run.)
+
 ## Default grip and extra buttons
 
 | Button | Action |

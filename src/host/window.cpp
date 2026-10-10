@@ -283,7 +283,23 @@ void pad_close(SDL_JoystickID id) {
 // changes nothing.
 std::atomic<int> g_input_device{0};  // InputDevice
 std::atomic<std::uint64_t> g_input_serial{0};
+// input.device = "controller" / "keyboard" pins the device (BBHOST_INPUT_DEVICE
+// overrides): 1 is the controller alone - keys and mouse neither drive the
+// game nor switch the prompts - 2 the keyboard and mouse, 0 the last used.
+int input_lock() {
+    static const int lock = [] {
+        const char* e = std::getenv("BBHOST_INPUT_DEVICE");
+        const std::string v = e && *e ? e : config().input_device;
+        const int r = v == "controller" || v == "pad" ? 1 : v == "keyboard" || v == "kbm" ? 2 : 0;
+        if (r) host_log("input: device pinned to %s", r == 1 ? "controller" : "keyboard and mouse");
+        return r;
+    }();
+    return lock;
+}
 void note_input(InputDevice d) {
+    if (const int lock = input_lock()) {
+        if ((lock == 1) != (d == InputDevice::Pad)) return;
+    }
     if (g_input_device.exchange(static_cast<int>(d), std::memory_order_relaxed) != static_cast<int>(d)) {
         g_input_serial.fetch_add(1, std::memory_order_relaxed);
         host_log("input: %s", d == InputDevice::Pad ? "controller" : "keyboard and mouse");
@@ -1406,7 +1422,7 @@ void update_pad() {
     // The key that ended a text entry stays out of the pad until released.
     const int end_key = g_text_end_key.load(std::memory_order_relaxed);
     if (end_key >= 0 && !(keys && end_key < nkeys && keys[end_key])) g_text_end_key.store(-1, std::memory_order_relaxed);
-    if (keys && SDL_GetKeyboardFocus() == g_window) {
+    if (keys && input_lock() != 1 && SDL_GetKeyboardFocus() == g_window) {
         auto down = [&](SDL_Scancode sc) { return sc < nkeys && keys[sc] && static_cast<int>(sc) != g_text_end_key.load(std::memory_order_relaxed); };
         if (down(SDL_SCANCODE_UP)) p.menu_buttons |= kUp;
         if (down(SDL_SCANCODE_DOWN)) p.menu_buttons |= kDown;
@@ -1586,10 +1602,19 @@ bool host_window_start(int width, int height, const char* title) {
 #if defined(BBHOST_HAVE_SDL3)
 namespace {
 bool window_start_impl(int width, int height, const char* title) {
-    // Enable SDL3 HIDAPI drivers for Steam Controller, HORI Steam Controller, and Steam Deck
-    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1");
-    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM_HORI, "1");
-    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAMDECK, "1");
+    // SDL's own Steam Controller drivers read the raw device, past Steam Input's
+    // layout, and leave Steam's desktop layout live beside it: that is keys and
+    // clicks for every press. Started from Steam, the Steam Input virtual pad is
+    // the one to read; the raw drivers are only for a start outside Steam.
+    if (!launched_by_steam()) {
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1");
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM_HORI, "1");
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAMDECK, "1");
+    } else {
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "0");
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM_HORI, "0");
+        SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAMDECK, "0");
+    }
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         host_log("SDL_Init failed: %s", SDL_GetError());

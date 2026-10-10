@@ -200,6 +200,10 @@ void apply_values(const std::map<std::string, std::string>& kv, HostConfig* c) {
         }
     }
     {
+        auto it = kv.find("input.device");
+        if (it != kv.end()) c->input_device = unquote(it->second);
+    }
+    {
         auto it = kv.find("video.headless");
         if (it != kv.end()) {
             c->headless = it->second == "true" || it->second == "1";

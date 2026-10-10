@@ -174,3 +174,10 @@ five_players = true
 # L5 l3, R5 roll.
 # l4 = "gestures"
 # r4 = "personal_effects"
+
+[input]
+# Which device drives the game and its prompts. "auto" follows the last one
+# used. "controller" ignores the keyboard and mouse completely (for a Steam
+# Controller / Deck through Steam Input, whose desktop layout would otherwise
+# also send keys). "keyboard" ignores pads for the prompts.
+# device = "auto"
