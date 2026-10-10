@@ -193,6 +193,10 @@ void apply_values(const std::map<std::string, std::string>& kv, HostConfig* c) {
     for (const auto& [k, v] : kv) {
         if (k.rfind("keys.", 0) == 0) {
             c->keys[k.substr(5)] = unquote(v);
+        } else if (k.rfind("gamepad.", 0) == 0) {
+            c->gamepad[k.substr(8)] = unquote(v);
+        } else if (k.rfind("controller.", 0) == 0) {
+            c->gamepad[k.substr(11)] = unquote(v);
         }
     }
     {

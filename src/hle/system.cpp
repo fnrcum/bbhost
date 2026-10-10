@@ -1564,7 +1564,7 @@ GUEST_ABI int hle_pad_read(int handle, std::uint8_t* st) {
         // picked up gives the game's camera back (engine/mouse_camera.h).
         mouse_camera_publish(hs.mouse_sens, hs.mouse_invert_x, hs.mouse_invert_y,
                              !hs.mouse_auto_rotation && hs.mouse_camera &&
-                                 host_input_device() == InputDevice::KeyboardMouse);
+                                 (host_input_device() == InputDevice::KeyboardMouse || host_mouse_relative()));
         if (want != host_mouse_relative()) {
             host_mouse_set_relative(want);
         }

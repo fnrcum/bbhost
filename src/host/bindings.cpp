@@ -7,6 +7,7 @@
 #include "log.h"
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -196,13 +197,132 @@ void set_from_text(int a, const std::string& text, const char* where) {
     g_serial.fetch_add(1, std::memory_order_relaxed);
 }
 
+std::atomic<GamepadAction> g_gamepad_bindings[32];
+
+int button_from_name(const std::string& name) {
+#if defined(BBHOST_HAVE_SDL3)
+    std::string s = name;
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (s == "south" || s == "a" || s == "cross") return SDL_GAMEPAD_BUTTON_SOUTH;
+    if (s == "east" || s == "b" || s == "circle") return SDL_GAMEPAD_BUTTON_EAST;
+    if (s == "west" || s == "x" || s == "square") return SDL_GAMEPAD_BUTTON_WEST;
+    if (s == "north" || s == "y" || s == "triangle") return SDL_GAMEPAD_BUTTON_NORTH;
+    if (s == "back" || s == "select" || s == "view") return SDL_GAMEPAD_BUTTON_BACK;
+    if (s == "guide" || s == "steam" || s == "home") return SDL_GAMEPAD_BUTTON_GUIDE;
+    if (s == "start" || s == "options" || s == "menu") return SDL_GAMEPAD_BUTTON_START;
+    if (s == "l3" || s == "left_stick" || s == "leftstick") return SDL_GAMEPAD_BUTTON_LEFT_STICK;
+    if (s == "r3" || s == "right_stick" || s == "rightstick") return SDL_GAMEPAD_BUTTON_RIGHT_STICK;
+    if (s == "l1" || s == "left_shoulder" || s == "lb") return SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
+    if (s == "r1" || s == "right_shoulder" || s == "rb") return SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER;
+    if (s == "dpad_up" || s == "up") return SDL_GAMEPAD_BUTTON_DPAD_UP;
+    if (s == "dpad_down" || s == "down") return SDL_GAMEPAD_BUTTON_DPAD_DOWN;
+    if (s == "dpad_left" || s == "left") return SDL_GAMEPAD_BUTTON_DPAD_LEFT;
+    if (s == "dpad_right" || s == "right") return SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+    if (s == "misc1" || s == "share" || s == "capture" || s == "qam") return SDL_GAMEPAD_BUTTON_MISC1;
+    if (s == "paddle_l1" || s == "l4" || s == "paddle1") return SDL_GAMEPAD_BUTTON_LEFT_PADDLE1;
+    if (s == "paddle_r1" || s == "r4" || s == "paddle2") return SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1;
+    if (s == "paddle_l2" || s == "l5" || s == "paddle3") return SDL_GAMEPAD_BUTTON_LEFT_PADDLE2;
+    if (s == "paddle_r2" || s == "r5" || s == "paddle4") return SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2;
+    if (s == "touchpad" || s == "touchpad_click" || s == "touchpadclick" || s == "tp") return SDL_GAMEPAD_BUTTON_TOUCHPAD;
+    return SDL_GetGamepadButtonFromString(name.c_str());
+#else
+    (void)name;
+    return -1;
+#endif
+}
+
+GamepadAction default_gamepad_action(int b) {
+#if defined(BBHOST_HAVE_SDL3)
+    switch (b) {
+        case SDL_GAMEPAD_BUTTON_SOUTH: return GamepadAction::Interact;
+        case SDL_GAMEPAD_BUTTON_EAST: return GamepadAction::Roll;
+        case SDL_GAMEPAD_BUTTON_WEST: return GamepadAction::UseItem;
+        case SDL_GAMEPAD_BUTTON_NORTH: return GamepadAction::BloodVial;
+        case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return GamepadAction::Transform;
+        case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return GamepadAction::Attack;
+        case SDL_GAMEPAD_BUTTON_LEFT_STICK: return GamepadAction::L3;
+        case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return GamepadAction::LockOn;
+        case SDL_GAMEPAD_BUTTON_START: return GamepadAction::Menu;
+        case SDL_GAMEPAD_BUTTON_BACK: return GamepadAction::Gestures;
+        case SDL_GAMEPAD_BUTTON_TOUCHPAD: return GamepadAction::PersonalEffects;
+        case SDL_GAMEPAD_BUTTON_DPAD_UP: return GamepadAction::DpadUp;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return GamepadAction::DpadDown;
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return GamepadAction::DpadLeft;
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return GamepadAction::DpadRight;
+        case SDL_GAMEPAD_BUTTON_LEFT_PADDLE1: return GamepadAction::Gestures;         // L4 -> Gestures (Touchpad Left)
+        case SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1: return GamepadAction::PersonalEffects; // R4 -> Personal Effects (Touchpad Right)
+        case SDL_GAMEPAD_BUTTON_LEFT_PADDLE2: return GamepadAction::L3;               // L5 -> L3
+        case SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2: return GamepadAction::Roll;            // R5 -> Roll
+        case SDL_GAMEPAD_BUTTON_MISC1: return GamepadAction::PersonalEffects;         // Share / QAM
+        default: return GamepadAction::Default;
+    }
+#else
+    (void)b;
+    return GamepadAction::Default;
+#endif
+}
+
 }  // namespace
+
+GamepadAction host_gamepad_action_parse(const char* name) {
+    if (!name || !*name) return GamepadAction::Default;
+    std::string s = name;
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (s == "none" || s == "unbound" || s == "off") return GamepadAction::None;
+    if (s == "interact" || s == "cross" || s == "a") return GamepadAction::Interact;
+    if (s == "roll" || s == "circle" || s == "b" || s == "dodge" || s == "sprint") return GamepadAction::Roll;
+    if (s == "use_item" || s == "useitem" || s == "square" || s == "x" || s == "item") return GamepadAction::UseItem;
+    if (s == "blood_vial" || s == "bloodvial" || s == "triangle" || s == "y" || s == "heal") return GamepadAction::BloodVial;
+    if (s == "transform" || s == "l1" || s == "lb") return GamepadAction::Transform;
+    if (s == "attack" || s == "r1" || s == "rb") return GamepadAction::Attack;
+    if (s == "firearm" || s == "parry" || s == "l2" || s == "lt") return GamepadAction::Firearm;
+    if (s == "strong_attack" || s == "strongattack" || s == "r2" || s == "rt") return GamepadAction::StrongAttack;
+    if (s == "l3" || s == "left_stick") return GamepadAction::L3;
+    if (s == "lock_on" || s == "lockon" || s == "r3" || s == "right_stick") return GamepadAction::LockOn;
+    if (s == "menu" || s == "options" || s == "start") return GamepadAction::Menu;
+    if (s == "gestures" || s == "touchpad_left" || s == "gesture") return GamepadAction::Gestures;
+    if (s == "personal_effects" || s == "effects" || s == "touchpad_right" || s == "personaleffects") return GamepadAction::PersonalEffects;
+    if (s == "touchpad" || s == "touchpad_click" || s == "touchpadclick") return GamepadAction::TouchpadClick;
+    if (s == "dpad_up" || s == "up") return GamepadAction::DpadUp;
+    if (s == "switch_item" || s == "dpad_down" || s == "down") return GamepadAction::DpadDown;
+    if (s == "switch_left" || s == "dpad_left" || s == "left") return GamepadAction::DpadLeft;
+    if (s == "switch_right" || s == "dpad_right" || s == "right") return GamepadAction::DpadRight;
+    return GamepadAction::Default;
+}
+
+GamepadAction host_gamepad_button_action(int sdl_button) {
+    if (sdl_button < 0 || sdl_button >= 32) return GamepadAction::None;
+    GamepadAction act = g_gamepad_bindings[sdl_button].load(std::memory_order_relaxed);
+    if (act != GamepadAction::Default) return act;
+    return default_gamepad_action(sdl_button);
+}
+
+void host_gamepad_bindings_load() {
+    for (int i = 0; i < 32; ++i) {
+        g_gamepad_bindings[i].store(GamepadAction::Default, std::memory_order_relaxed);
+    }
+    for (const auto& [btn_name, act_name] : config().gamepad) {
+        int b = button_from_name(btn_name);
+        if (b < 0 || b >= 32) {
+            host_log("gamepad: unknown button \"%s\" in config", btn_name.c_str());
+            continue;
+        }
+        GamepadAction act = host_gamepad_action_parse(act_name.c_str());
+        if (act == GamepadAction::Default) {
+            host_log("gamepad: unknown action \"%s\" for button \"%s\"", act_name.c_str(), btn_name.c_str());
+            continue;
+        }
+        g_gamepad_bindings[b].store(act, std::memory_order_relaxed);
+        host_log("gamepad: button %d (%s) -> action %s", b, btn_name.c_str(), act_name.c_str());
+    }
+}
 
 std::uint64_t host_bindings_serial() { return g_serial.load(std::memory_order_relaxed); }
 
 const BindingInfo& host_binding_info(int action) { return kInfo[action < 0 || action >= kBindCount ? 0 : action]; }
 
 void host_bindings_load_defaults() {
+    host_gamepad_bindings_load();
     for (int a = 0; a < kBindCount; ++a) {
         g_key[a].store(kInfo[a].def_key ? scancode_from_name(kInfo[a].def_key) : 0, std::memory_order_relaxed);
         g_mouse[a].store(kInfo[a].def_mouse, std::memory_order_relaxed);

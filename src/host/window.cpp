@@ -199,24 +199,47 @@ bool steam_running() {
 #if defined(__linux__)
     const char* home = std::getenv("HOME");
     if (!home) return false;
-    FILE* f = std::fopen((std::string(home) + "/.steam/steam.pid").c_str(), "r");
-    if (!f) return false;
-    long pid = 0;
-    const bool read = std::fscanf(f, "%ld", &pid) == 1;
-    std::fclose(f);
-    return read && pid > 0 && (kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM);
+    for (const char* p : {"/.steam/steam.pid", "/.steam/root/steam.pid", "/.local/share/Steam/steam.pid"}) {
+        FILE* f = std::fopen((std::string(home) + p).c_str(), "r");
+        if (!f) continue;
+        long pid = 0;
+        const bool read = std::fscanf(f, "%ld", &pid) == 1;
+        std::fclose(f);
+        if (read && pid > 0 && (kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM)) return true;
+    }
+    return false;
 #else
     return false;
 #endif
 }
-void note_deck_outside_steam(SDL_Gamepad* g) {
-    const char* launched = std::getenv("SteamGameId");
-    if (SDL_GetGamepadVendor(g) != 0x28de || SDL_GetGamepadProduct(g) != 0x1205 || (launched && *launched) || !steam_running()) return;
-    g_deck_outside_steam = true;
-    host_log("input: the Deck's controls outside Steam - Steam's desktop layout also sends keys and clicks for them, so each "
-             "press does two things; start bbhost from Steam (Add a Non-Steam Game), in Game Mode or Desktop Mode");
+bool launched_by_steam() {
+    const char* id = std::getenv("SteamGameId");
+    if (id && *id) return true;
+    const char* app = std::getenv("SteamAppId");
+    if (app && *app && std::strcmp(app, "0") != 0) return true;
+    const char* overlay = std::getenv("SteamOverlayGameId");
+    if (overlay && *overlay) return true;
+    const char* tenfoot = std::getenv("SteamTenfoot");
+    if (tenfoot && *tenfoot) return true;
+    const char* compat = std::getenv("STEAM_COMPAT_CLIENT_INSTALL_PATH");
+    if (compat && *compat) return true;
+    return false;
 }
-// A key or click right behind a pad press on such a Deck is the desktop
+bool is_valve_controller(SDL_Gamepad* g) {
+    if (!g) return false;
+    const std::uint16_t v = SDL_GetGamepadVendor(g);
+    if (v == 0x28de) return true;  // Valve Software USB Vendor ID
+    if (v == 0x0f0d && SDL_GetGamepadProduct(g) == 0x0138) return true;  // HORI Wireless Horipad for Steam
+    return false;
+}
+void note_deck_outside_steam(SDL_Gamepad* g) {
+    if (!is_valve_controller(g) || launched_by_steam() || !steam_running()) return;
+    g_deck_outside_steam = true;
+    host_log("input: Steam controller (%04x:%04x) outside Steam / in desktop mode - Steam's desktop layout also sends keys and clicks for them, so each "
+             "press does two things; start bbhost from Steam with a Gamepad profile (Add a Non-Steam Game), in Game Mode or Desktop Mode",
+             SDL_GetGamepadVendor(g), SDL_GetGamepadProduct(g));
+}
+// A key or click right behind a pad press on such a controller is the desktop
 // layout's twin of it: say so on screen, at most every half minute.
 void warn_deck_double_input() {
     if (!g_deck_outside_steam) return;
@@ -224,7 +247,7 @@ void warn_deck_double_input() {
     const auto now = std::chrono::steady_clock::now();
     if (now - g_last_pad_press > std::chrono::milliseconds(200) || (said.time_since_epoch().count() && now - said < std::chrono::seconds(30))) return;
     said = now;
-    host_message_show("Start bbhost from Steam: outside it, Deck buttons also send keys", 8.0f);
+    host_message_show("Start bbhost from Steam: outside it, controller buttons also send keys", 8.0f);
 }
 
 void pad_open(SDL_JoystickID id) {
@@ -1253,29 +1276,39 @@ void update_pad() {
     }
     // Each pad's buttons are or-ed together, and each stick axis and trigger
     // is whichever pad pushes it furthest, so two pads never fight.
-    bool touch_done = false, back_held = false;
+    bool touch_done = false;
+    bool gestures_held = false, effects_held = false, touchpad_click_held = false;
     for (SDL_Gamepad* g_gamepad : g_pads) {
         p.connected = true;
-        auto btn = [&](SDL_GamepadButton b, std::uint32_t bit) {
-            if (static_cast<int>(b) != end_button && SDL_GetGamepadButton(g_gamepad, b)) {
-                p.buttons |= bit;
+
+        for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
+            if (b == end_button) continue;
+            if (!SDL_GetGamepadButton(g_gamepad, static_cast<SDL_GamepadButton>(b))) continue;
+
+            const GamepadAction act = host_gamepad_button_action(b);
+            switch (act) {
+                case GamepadAction::Interact: p.buttons |= kCross; break;
+                case GamepadAction::Roll: p.buttons |= kCircle; break;
+                case GamepadAction::UseItem: p.buttons |= kSquare; break;
+                case GamepadAction::BloodVial: p.buttons |= kTriangle; break;
+                case GamepadAction::Transform: p.buttons |= kL1; break;
+                case GamepadAction::Attack: p.buttons |= kR1; break;
+                case GamepadAction::Firearm: p.buttons |= kL2; break;
+                case GamepadAction::StrongAttack: p.buttons |= kR2; break;
+                case GamepadAction::L3: p.buttons |= kL3; break;
+                case GamepadAction::LockOn: p.buttons |= kR3; break;
+                case GamepadAction::Menu: p.buttons |= kOptions; break;
+                case GamepadAction::Gestures: gestures_held = true; break;
+                case GamepadAction::PersonalEffects: effects_held = true; break;
+                case GamepadAction::TouchpadClick: touchpad_click_held = true; break;
+                case GamepadAction::DpadUp: p.buttons |= kUp; break;
+                case GamepadAction::DpadDown: p.buttons |= kDown; break;
+                case GamepadAction::DpadLeft: p.buttons |= kLeft; break;
+                case GamepadAction::DpadRight: p.buttons |= kRight; break;
+                default: break;
             }
-        };
-        btn(SDL_GAMEPAD_BUTTON_SOUTH, kCross);
-        btn(SDL_GAMEPAD_BUTTON_EAST, kCircle);
-        btn(SDL_GAMEPAD_BUTTON_WEST, kSquare);
-        btn(SDL_GAMEPAD_BUTTON_NORTH, kTriangle);
-        btn(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, kL1);
-        btn(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, kR1);
-        btn(SDL_GAMEPAD_BUTTON_LEFT_STICK, kL3);
-        btn(SDL_GAMEPAD_BUTTON_RIGHT_STICK, kR3);
-        btn(SDL_GAMEPAD_BUTTON_START, kOptions);
-        back_held |= SDL_GetGamepadButton(g_gamepad, SDL_GAMEPAD_BUTTON_BACK);  // below, after the touchpad's own fingers
-        btn(SDL_GAMEPAD_BUTTON_TOUCHPAD, kTouchPad);
-        btn(SDL_GAMEPAD_BUTTON_DPAD_UP, kUp);
-        btn(SDL_GAMEPAD_BUTTON_DPAD_DOWN, kDown);
-        btn(SDL_GAMEPAD_BUTTON_DPAD_LEFT, kLeft);
-        btn(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, kRight);
+        }
+
         const auto further = [](std::uint8_t have, std::uint8_t v) {
             return std::abs(static_cast<int>(v) - kStickRest) > std::abs(static_cast<int>(have) - kStickRest) ? v : have;
         };
@@ -1328,18 +1361,37 @@ void update_pad() {
             }
         }
     }
-    // Back / Select / Share is the touchpad's left side - Gestures - on pads
-    // without a touchpad and on those with one alike: the press, and a finger
-    // where the keyboard's Gestures key puts one (bindings.cpp), since the game
-    // reads the side from the finger. Its own stable id, so holding it is one
-    // touch and it can be held with the key.
-    if (back_held) {
+    // Touchpad button and side emulation for Gestures (Left) and Personal Effects (Right):
+    if (gestures_held) {
         p.buttons |= kTouchPad;
         if (p.touch_count < 2) {
             PadState::Touch& t = p.touch[p.touch_count++];
             t.x = static_cast<std::uint16_t>(kPadTouchW / 4);
             t.y = static_cast<std::uint16_t>(kPadTouchH / 2);
             t.id = 201;
+            t.down = true;
+        }
+    }
+    if (effects_held) {
+        p.buttons |= kTouchPad;
+        if (p.touch_count < 2) {
+            PadState::Touch& t = p.touch[p.touch_count++];
+            t.x = static_cast<std::uint16_t>(kPadTouchW * 3 / 4);
+            t.y = static_cast<std::uint16_t>(kPadTouchH / 2);
+            t.id = 202;
+            t.down = true;
+        }
+    }
+    if (touchpad_click_held) {
+        p.buttons |= kTouchPad;
+        // On pads without a physical capacitive touch surface (e.g. Steam virtual pad / Xbox layout),
+        // if no finger has been placed yet, default to Personal Effects (right side)
+        // so that both Gestures (Back/L4) and Personal Effects (Touchpad/R4) are reachable.
+        if (p.touch_count == 0) {
+            PadState::Touch& t = p.touch[p.touch_count++];
+            t.x = static_cast<std::uint16_t>(kPadTouchW * 3 / 4);
+            t.y = static_cast<std::uint16_t>(kPadTouchH / 2);
+            t.id = 203;
             t.down = true;
         }
     }
@@ -1534,6 +1586,11 @@ bool host_window_start(int width, int height, const char* title) {
 #if defined(BBHOST_HAVE_SDL3)
 namespace {
 bool window_start_impl(int width, int height, const char* title) {
+    // Enable SDL3 HIDAPI drivers for Steam Controller, HORI Steam Controller, and Steam Deck
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM_HORI, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAMDECK, "1");
+
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         host_log("SDL_Init failed: %s", SDL_GetError());
         return false;
@@ -1710,7 +1767,13 @@ bool host_window_pump() {
                 break;
             case SDL_EVENT_MOUSE_MOTION: {
                 // A mouse that is touched, not one that twitches by a pixel.
-                if (std::fabs(e.motion.xrel) + std::fabs(e.motion.yrel) >= 3.0f) note_input(InputDevice::KeyboardMouse);
+                // In camera mode, relative motion is camera aim (mouse, trackpad, gyro)
+                // and should not switch the input device away from Pad.
+                if (std::fabs(e.motion.xrel) + std::fabs(e.motion.yrel) >= 3.0f) {
+                    if (!g_mouse_relative.load(std::memory_order_relaxed)) {
+                        note_input(InputDevice::KeyboardMouse);
+                    }
+                }
                 std::lock_guard<std::mutex> lock(g_mouse_mu);
                 // Relative motion is accumulated whatever the mode: SDL
                 // reports it either way, and a consumer that wants deltas

@@ -67,6 +67,8 @@ struct HostConfig {
     // player has rebound something; window.cpp holds the defaults and the
     // list of action names.
     std::map<std::string, std::string> keys;
+    // [gamepad] or [controller] from the config, button name -> action name.
+    std::map<std::string, std::string> gamepad;
     std::string config_path;   // the file to edit: the per-user config once there is one
     std::string config_layers; // every file read, lowest first ("a <- b <- c")
     std::string profile;       // --config's file name without .toml ("" without one): names its own F10 settings

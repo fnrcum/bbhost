@@ -224,6 +224,14 @@ int main() {
         CHECK(c.eboot == update + "/eboot.bin");
         c = load("[paths]\napp0 = \"" + base + "\"\neboot = \"" + base + "/eboot.bin\"\n");
         CHECK(c.eboot == base + "/eboot.bin");  // a path given is kept
+
+        // Gamepad / controller bindings parsing
+        HostConfig cg = load("[gamepad]\npaddle_l1 = \"gestures\"\npaddle_r1 = \"personal_effects\"\n");
+        CHECK(cg.gamepad["paddle_l1"] == "gestures");
+        CHECK(cg.gamepad["paddle_r1"] == "personal_effects");
+        HostConfig cc = load("[controller]\nl4 = \"gestures\"\nr4 = \"personal_effects\"\n");
+        CHECK(cc.gamepad["l4"] == "gestures");
+        CHECK(cc.gamepad["r4"] == "personal_effects");
     }
 
     std::error_code ec;

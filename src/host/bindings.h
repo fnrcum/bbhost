@@ -61,6 +61,33 @@ void host_bindings_save(std::FILE* f);
 // (engine/key_prompts.h caches rewritten message text) knows to build again.
 std::uint64_t host_bindings_serial();
 
+enum class GamepadAction : int {
+    Default = 0,
+    None,
+    Interact,        // kCross
+    Roll,            // kCircle
+    UseItem,         // kSquare
+    BloodVial,       // kTriangle
+    Transform,       // kL1
+    Attack,          // kR1
+    Firearm,         // kL2
+    StrongAttack,    // kR2
+    L3,              // kL3
+    LockOn,          // kR3
+    Menu,            // kOptions
+    Gestures,        // Touchpad Left
+    PersonalEffects, // Touchpad Right
+    TouchpadClick,   // Touchpad button
+    DpadUp,          // kUp
+    DpadDown,        // kDown
+    DpadLeft,        // kLeft
+    DpadRight,       // kRight
+};
+
+GamepadAction host_gamepad_action_parse(const char* name);
+GamepadAction host_gamepad_button_action(int sdl_button);
+void host_gamepad_bindings_load();
+
 int host_binding_key(int action);    // an SDL scancode, 0 when unbound
 int host_binding_mouse(int action);  // 1..5 the buttons, 6 and 7 the wheel up and down; 0 when unbound
 // What the screen shows: "E", "X  /  Right Button", "Unbound". UTF-8.

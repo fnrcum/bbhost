@@ -163,3 +163,14 @@ five_players = true
 # A private repository's releases need a token: a file holding one with
 # read access to its contents.
 # token_file = "C:/Users/me/bbhost-github-token"
+
+[gamepad]
+# Rebind pad buttons (also accepted as [controller]). button = "action".
+# Buttons: south east west north back start guide l1 r1 l3 r3 dpad_up/down/left/right
+#   touchpad misc1 and the back grips: l4 r4 l5 r5 (paddle_l1 paddle_r1 paddle_l2 paddle_r2)
+# Actions: interact roll use_item blood_vial transform attack firearm strong_attack
+#   l3 lock_on menu gestures personal_effects touchpad_click dpad_up/down/left/right none
+# The Steam Controller / Steam Deck grips default to: L4 gestures, R4 personal_effects,
+# L5 l3, R5 roll.
+# l4 = "gestures"
+# r4 = "personal_effects"
